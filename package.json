@@ -5,9 +5,10 @@
   "type": "module",
   "scripts": {
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build && npm run open:bundle",
-    "tauri:bundle": "tauri build",
+    "tauri:build": "tauri build",
+    "tauri:bundle": "tauri build && npm run open:bundle",
     "open:bundle": "explorer src-tauri\\target\\release\\bundle\\nsis",
+    "clean": "powershell -Command \"Remove-Item -Recurse -Force .\\src-tauri\\target -ErrorAction SilentlyContinue; Remove-Item -Recurse -Force .\\dist -ErrorAction SilentlyContinue\"",
     "tauri": "tauri",
     "dev": "vite",
     "build": "tsc && vite build",
