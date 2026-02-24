@@ -2,6 +2,42 @@
 
 This template should help get you started developing with Tauri in vanilla HTML, CSS and Typescript.
 
+## Install / Update on Another Windows PC (Manual)
+
+This project builds a Windows installer (`.exe`) using Tauri + NSIS.
+
+### Build installer on your dev PC
+
+1. (Recommended for updates) bump app version in `src-tauri/tauri.conf.json`.
+2. Build the installer:
+
+```bash
+npm run tauri:build
+```
+
+3. Find the installer in:
+
+`src-tauri/target/release/bundle/nsis`
+
+### First-time install on destination PC
+
+1. Copy the generated installer `.exe` to the destination PC.
+2. Run the installer.
+3. Launch the app once, then place your media/config under:
+
+`Documents/auto-media-player`
+
+### Update existing install on destination PC
+
+1. Close the app completely.
+2. Run the new installer `.exe` (same app identifier, newer version).
+3. The installer updates in place; your `Documents/auto-media-player` content is preserved.
+
+If in-place update fails:
+
+1. Uninstall the old app from Windows Installed apps.
+2. Run the new installer again.
+
 ## Media Layout
 
 - Media root folder: `Documents/auto-media-player`
