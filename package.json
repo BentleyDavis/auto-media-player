@@ -7,6 +7,8 @@
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
     "tauri:bundle": "tauri build && npm run open:bundle",
+    "audio:prep": "node --experimental-strip-types tools/mp3-process.ts",
+    "audio:prep:dry": "node --experimental-strip-types tools/mp3-process.ts --dry-run",
     "open:bundle": "explorer src-tauri\\target\\release\\bundle\\nsis",
     "clean": "powershell -Command \"Remove-Item -Recurse -Force .\\src-tauri\\target -ErrorAction SilentlyContinue; Remove-Item -Recurse -Force .\\dist -ErrorAction SilentlyContinue\"",
     "tauri": "tauri",
@@ -20,7 +22,8 @@
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",
-    "vite": "^6.0.3",
-    "typescript": "~5.6.2"
+    "@types/node": "^25.3.0",
+    "typescript": "~5.6.2",
+    "vite": "^6.0.3"
   }
 }

@@ -14,6 +14,9 @@ dist-ssr
 
 # Media files
 media/
+_toBeNormalized/
+_normalized/
+_originals/
 
 # Editor directories and files
 .vscode/*
