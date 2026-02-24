@@ -1,92 +1,117 @@
 import { invoke } from "@tauri-apps/api/core";
 import { convertFileSrc } from '@tauri-apps/api/core';
 
-let currentMedia: (HTMLVideoElement | HTMLImageElement) | null = null;
-let nextMedia: (HTMLVideoElement | HTMLImageElement) | null = null;
+type VisualElement = HTMLVideoElement | HTMLImageElement;
+type MediaKind = 'visual' | 'audio';
+
+interface MediaCatalog {
+  visuals: string[];
+  audios: string[];
+}
+
+class RandomRecentSelector {
+  private recentlySent: string[] = [];
+  private maxRecentHistory = 0;
+
+  select(files: string[]): string | null {
+    if (files.length === 0) {
+      return null;
+    }
+
+    this.maxRecentHistory = Math.ceil(files.length / 2);
+    const availableFiles = files.filter(file => !this.recentlySent.includes(file));
+    const pool = availableFiles.length > 0 ? availableFiles : files;
+    const randomIndex = Math.floor(Math.random() * pool.length);
+    const selected = pool[randomIndex];
+
+    this.recentlySent.push(selected);
+    this.recentlySent.splice(0, Math.max(0, this.recentlySent.length - this.maxRecentHistory));
+
+    return selected;
+  }
+}
+
+let currentVisual: VisualElement | null = null;
+let nextVisual: VisualElement | null = null;
+let currentAudio: HTMLAudioElement | null = null;
+let nextAudio: HTMLAudioElement | null = null;
+
 const IMAGE_DISPLAY_SECONDS = 10;
 const RETRY_DELAY_MS = 2000;
-let transitionTimer: number | null = null;
+let visualTransitionTimer: number | null = null;
+let audioRetryTimer: number | null = null;
 
-// Track recently sent media
-const recentlySent: string[] = [];
-let maxRecentHistory = 0;
+const selectors: Record<MediaKind, RandomRecentSelector> = {
+  visual: new RandomRecentSelector(),
+  audio: new RandomRecentSelector(),
+};
 
-function scheduleTransition(delayMs: number = 0): void {
-  if (transitionTimer) {
-    clearTimeout(transitionTimer);
+function scheduleVisualTransition(delayMs: number = 0): void {
+  if (visualTransitionTimer) {
+    clearTimeout(visualTransitionTimer);
   }
 
-  transitionTimer = window.setTimeout(() => {
-    transitionTimer = null;
-    transitionToNext().catch((error: Error) => {
-      console.error('Transition failed:', error);
-      scheduleTransition(RETRY_DELAY_MS);
+  visualTransitionTimer = window.setTimeout(() => {
+    visualTransitionTimer = null;
+    transitionToNextVisual().catch((error: Error) => {
+      console.error('Visual transition failed:', error);
+      scheduleVisualTransition(RETRY_DELAY_MS);
     });
   }, delayMs);
 }
 
-async function getMediaFiles(): Promise<string[]> {
+function scheduleAudioRetry(delayMs: number = RETRY_DELAY_MS): void {
+  if (audioRetryTimer) {
+    clearTimeout(audioRetryTimer);
+  }
+
+  audioRetryTimer = window.setTimeout(() => {
+    audioRetryTimer = null;
+    transitionToNextAudio().catch((error: Error) => {
+      console.error('Audio transition failed:', error);
+      scheduleAudioRetry(RETRY_DELAY_MS);
+    });
+  }, delayMs);
+}
+
+async function getMediaFiles(): Promise<MediaCatalog> {
   try {
-    const files = await invoke<string[]>('get_media_files');
-    // Update max history size to half the total files (rounded up)
-    maxRecentHistory = Math.ceil(files.length / 2);
-    return files;
+    return await invoke<MediaCatalog>('get_media_files');
   } catch (error) {
     console.error('Failed to get media files:', error);
-    return [];
+    return { visuals: [], audios: [] };
   }
 }
 
-function getRandomUnrecentMedia(files: string[]): string | null {
-  if (files.length === 0) return null;
-  
-  // Filter out recently sent files
-  const availableFiles = files.filter(f => !recentlySent.includes(f));
-  
-  // If all files were recently sent, clear the history and use all files
-  const poolToUse = availableFiles.length > 0 ? availableFiles : files;
-  
-  // Select random file from available pool
-  const randomIndex = Math.floor(Math.random() * poolToUse.length);
-  const selectedFile = poolToUse[randomIndex];
-  
-  // Add to history
-  recentlySent.push(selectedFile);
-  
-  // Keep history at exactly max size
-  recentlySent.splice(0, Math.max(0, recentlySent.length - maxRecentHistory));
-  
-  return selectedFile;
+function isVideoPath(path: string): boolean {
+  const lowerPath = path.toLowerCase();
+  return lowerPath.endsWith('.mp4') || lowerPath.endsWith('.webm') || lowerPath.endsWith('.mkv') || lowerPath.endsWith('.mov');
 }
 
-async function fetchNextMedia(): Promise<string | null> {
+async function fetchNextMedia(kind: MediaKind): Promise<{ url: string; relativePath: string } | null> {
   try {
-    const files = await getMediaFiles();
-    const selectedFile = getRandomUnrecentMedia(files);
-    
+    const mediaCatalog = await getMediaFiles();
+    const files = kind === 'visual' ? mediaCatalog.visuals : mediaCatalog.audios;
+    const selectedFile = selectors[kind].select(files);
+
     if (!selectedFile) {
-      console.error('No media files available');
+      console.warn(`No ${kind} files available`);
       return null;
     }
-    
-    // Get the full file path from Rust
+
     const filePath = await invoke<string>('get_media_path', { filename: selectedFile });
-    console.log('File path from Rust:', filePath);
-    
-    // Convert to asset URL
     const assetUrl = convertFileSrc(filePath);
-    console.log('Converted asset URL:', assetUrl);
-    
-    return assetUrl;
+
+    return { url: assetUrl, relativePath: selectedFile };
   } catch (error) {
-    console.error('Failed to fetch media:', error);
+    console.error(`Failed to fetch ${kind} media:`, error);
     return null;
   }
 }
 
-function cleanupMediaElement(element: HTMLVideoElement | HTMLImageElement | null): void {
+function cleanupVisualElement(element: VisualElement | null): void {
   if (!element) return;
-  
+
   if (element.tagName === 'VIDEO') {
     const video = element as HTMLVideoElement;
     video.pause();
@@ -97,9 +122,23 @@ function cleanupMediaElement(element: HTMLVideoElement | HTMLImageElement | null
   }
 }
 
-function createMediaElement(url: string): HTMLVideoElement | HTMLImageElement {
-  const isVideo = url.endsWith('.mp4') || url.endsWith('.webm') || url.endsWith('.mkv') || url.endsWith('.mov');
-  
+function cleanupAudioElement(element: HTMLAudioElement | null): void {
+  if (!element) return;
+  element.pause();
+  element.removeAttribute('src');
+  element.load();
+}
+
+function cleanupElementListeners(element: { _cleanupListeners?: () => void } | null): void {
+  if (!element || !element._cleanupListeners) {
+    return;
+  }
+  element._cleanupListeners();
+}
+
+function createVisualElement(url: string, relativePath: string): VisualElement {
+  const isVideo = isVideoPath(relativePath);
+
   if (isVideo) {
     const video = document.createElement('video');
     video.src = url;
@@ -109,130 +148,221 @@ function createMediaElement(url: string): HTMLVideoElement | HTMLImageElement {
     video.playsInline = true;
     video.disableRemotePlayback = true;
     video.preload = 'auto';
-    
-    const onEnded = () => scheduleTransition();
-    const onError = () => scheduleTransition(RETRY_DELAY_MS);
-    
+
+    const onEnded = () => scheduleVisualTransition();
+    const onError = () => scheduleVisualTransition(RETRY_DELAY_MS);
+
     video.addEventListener('ended', onEnded);
     video.addEventListener('error', onError);
-    
+
     (video as any)._cleanupListeners = () => {
       video.removeEventListener('ended', onEnded);
       video.removeEventListener('error', onError);
     };
-    
+
     (video as any)._isVideo = true;
     video.classList.add('media', 'media-video');
     video.style.opacity = '0';
-    
+
     return video;
   } else {
     const img = document.createElement('img');
     img.src = url;
-    
-    const onError = () => scheduleTransition(RETRY_DELAY_MS);
+
+    const onError = () => scheduleVisualTransition(RETRY_DELAY_MS);
     img.addEventListener('error', onError);
-    
+
     (img as any)._cleanupListeners = () => {
       img.removeEventListener('error', onError);
     };
-    
+
     (img as any)._isVideo = false;
     img.classList.add('media', 'media-image');
     img.style.opacity = '0';
-    
+
     return img;
   }
 }
 
-async function showCurrentMedia(): Promise<void> {
+function createAudioElement(url: string): HTMLAudioElement {
+  const audio = new Audio(url);
+  audio.preload = 'auto';
+
+  const onEnded = () => scheduleAudioRetry();
+  const onError = () => scheduleAudioRetry(RETRY_DELAY_MS);
+
+  audio.addEventListener('ended', onEnded);
+  audio.addEventListener('error', onError);
+
+  (audio as any)._cleanupListeners = () => {
+    audio.removeEventListener('ended', onEnded);
+    audio.removeEventListener('error', onError);
+  };
+
+  return audio;
+}
+
+async function showCurrentVisual(): Promise<void> {
   try {
-    if (!nextMedia) {
-      console.warn('No next media ready');
-      scheduleTransition(RETRY_DELAY_MS);
+    if (!nextVisual) {
+      console.warn('No next visual ready');
+      scheduleVisualTransition(RETRY_DELAY_MS);
       return;
     }
-    
-    const oldMedia = currentMedia;
-    currentMedia = nextMedia;
-    nextMedia = null;
-    
-    if ((currentMedia as any)._isVideo) {
-      (currentMedia as HTMLVideoElement).play().catch((err: Error) => {
+
+    const oldVisual = currentVisual;
+    currentVisual = nextVisual;
+    nextVisual = null;
+
+    if ((currentVisual as any)._isVideo) {
+      (currentVisual as HTMLVideoElement).play().catch((err: Error) => {
         console.error('Play failed:', err);
-        scheduleTransition(RETRY_DELAY_MS);
+        scheduleVisualTransition(RETRY_DELAY_MS);
       });
     } else {
-      scheduleTransition(IMAGE_DISPLAY_SECONDS * 1000);
+      scheduleVisualTransition(IMAGE_DISPLAY_SECONDS * 1000);
     }
-    
+
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
-        if (currentMedia) {
-          currentMedia.style.opacity = '1';
+        if (currentVisual) {
+          currentVisual.style.opacity = '1';
         }
       });
     });
-    
-    if (oldMedia) {
-      oldMedia.style.opacity = '0';
+
+    if (oldVisual) {
+      oldVisual.style.opacity = '0';
       setTimeout(() => {
-        if ((oldMedia as any)._cleanupListeners) {
-          (oldMedia as any)._cleanupListeners();
-        }
-        cleanupMediaElement(oldMedia);
-        oldMedia.remove();
+        cleanupElementListeners(oldVisual as any);
+        cleanupVisualElement(oldVisual);
+        oldVisual.remove();
       }, 500);
     }
-    
-    await prepareNextMedia();
+
+    await prepareNextVisual();
   } catch (error) {
-    console.error('Failed to show media:', error);
-    scheduleTransition(RETRY_DELAY_MS);
+    console.error('Failed to show visual media:', error);
+    scheduleVisualTransition(RETRY_DELAY_MS);
   }
 }
 
-async function prepareNextMedia(): Promise<void> {
+async function prepareNextVisual(): Promise<void> {
   try {
-    const url = await fetchNextMedia();
-    if (!url) {
-      console.warn('No media URL returned');
+    const media = await fetchNextMedia('visual');
+    if (!media) {
+      console.warn('No visual media URL returned');
       return;
     }
-    
-    if (nextMedia) {
-      if ((nextMedia as any)._cleanupListeners) {
-        (nextMedia as any)._cleanupListeners();
-      }
-      cleanupMediaElement(nextMedia);
-      nextMedia.remove();
+
+    if (nextVisual) {
+      cleanupElementListeners(nextVisual as any);
+      cleanupVisualElement(nextVisual);
+      nextVisual.remove();
     }
-    
-    nextMedia = createMediaElement(url);
+
+    nextVisual = createVisualElement(media.url, media.relativePath);
     const mediaDiv = document.getElementById('media-container');
     if (mediaDiv) {
-      mediaDiv.appendChild(nextMedia);
+      mediaDiv.appendChild(nextVisual);
     }
   } catch (error) {
-    console.error('Failed to prepare next media:', error);
+    console.error('Failed to prepare next visual:', error);
   }
 }
 
-async function transitionToNext(): Promise<void> {
+async function transitionToNextVisual(): Promise<void> {
   try {
-    await showCurrentMedia();
+    await showCurrentVisual();
   } catch (error) {
-    console.error('Error during transition:', error);
-    scheduleTransition(RETRY_DELAY_MS);
+    console.error('Error during visual transition:', error);
+    scheduleVisualTransition(RETRY_DELAY_MS);
+  }
+}
+
+async function startNextAudio(): Promise<void> {
+  try {
+    await prepareNextAudio();
+    await showCurrentAudio();
+  } catch (error) {
+    console.error('Failed to start audio playback:', error);
+    scheduleAudioRetry(RETRY_DELAY_MS);
+  }
+}
+
+async function prepareNextAudio(): Promise<void> {
+  try {
+    const media = await fetchNextMedia('audio');
+    if (!media) {
+      console.warn('No audio media URL returned');
+      return;
+    }
+
+    if (nextAudio) {
+      cleanupElementListeners(nextAudio as any);
+      cleanupAudioElement(nextAudio);
+    }
+
+    nextAudio = createAudioElement(media.url);
+  } catch (error) {
+    console.error('Failed to prepare next audio:', error);
+  }
+}
+
+async function showCurrentAudio(): Promise<void> {
+  try {
+    if (!nextAudio) {
+      console.warn('No next audio ready');
+      scheduleAudioRetry(RETRY_DELAY_MS);
+      return;
+    }
+
+    const oldAudio = currentAudio;
+    currentAudio = nextAudio;
+    nextAudio = null;
+
+    await currentAudio.play();
+
+    if (oldAudio) {
+      cleanupElementListeners(oldAudio as any);
+      cleanupAudioElement(oldAudio);
+    }
+
+    await prepareNextAudio();
+  } catch (error) {
+    console.error('Failed to show audio media:', error);
+    scheduleAudioRetry(RETRY_DELAY_MS);
+  }
+}
+
+async function transitionToNextAudio(): Promise<void> {
+  try {
+    await showCurrentAudio();
+  } catch (error) {
+    console.error('Error during audio transition:', error);
+    scheduleAudioRetry(RETRY_DELAY_MS);
   }
 }
 
 window.addEventListener('DOMContentLoaded', async () => {
   try {
-    await prepareNextMedia();
-    await showCurrentMedia();
+    const mediaCatalog = await getMediaFiles();
+
+    if (mediaCatalog.visuals.length > 0) {
+      await prepareNextVisual();
+      await showCurrentVisual();
+    } else {
+      console.warn('No visual media files found');
+    }
+
+    if (mediaCatalog.audios.length > 0) {
+      await startNextAudio();
+    } else {
+      console.warn('No audio media files found');
+    }
   } catch (error) {
-    console.error('Failed to start media loop:', error);
-    scheduleTransition(RETRY_DELAY_MS);
+    console.error('Failed to start media loops:', error);
+    scheduleVisualTransition(RETRY_DELAY_MS);
+    scheduleAudioRetry(RETRY_DELAY_MS);
   }
 });
