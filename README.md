@@ -66,12 +66,12 @@ Default config template:
 			"name": "night",
 			"start": "20:00",
 			"end": "07:00",
-			"visualDirs": ["videos/night"],
-			"audioDirs": ["audio/night"]
+			"visualDirs": ["video"],
+			"audioDirs": ["audio-night"]
 		}
 	],
 	"fallback": {
-		"visualDirs": ["videos"],
+		"visualDirs": ["video"],
 		"audioDirs": ["audio"]
 	}
 }
