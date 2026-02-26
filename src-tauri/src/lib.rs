@@ -10,6 +10,7 @@ const VISUAL_EXTENSIONS: [&str; 9] = [".mp4", ".webm", ".mkv", ".mov", ".jpg", "
 const AUDIO_EXTENSIONS: [&str; 1] = [".mp3"];
 const APP_NAME: &str = "auto-media-player";
 const PLAYBACK_CONFIG_FILE: &str = "playback-config.json";
+const DEFAULT_PLAYBACK_CONFIG: &str = include_str!("../defaults/playback-config.json");
 
 #[derive(Serialize)]
 struct MediaCatalog {
@@ -41,26 +42,6 @@ struct MediaFilter {
     audio_dirs: Option<Vec<String>>,
 }
 
-impl PlaybackConfig {
-    fn default_template() -> Self {
-        Self {
-            schedules: vec![
-                ScheduleRule {
-                    name: Some("night".to_string()),
-                    start: "20:00".to_string(),
-                    end: "07:00".to_string(),
-                    visual_dirs: Some(vec!["videos/night".to_string()]),
-                    audio_dirs: Some(vec!["audio/night".to_string()]),
-                }
-            ],
-            fallback: Some(MediaFilter {
-                visual_dirs: Some(vec!["videos".to_string()]),
-                audio_dirs: Some(vec!["audio".to_string()]),
-            }),
-        }
-    }
-}
-
 #[tauri::command]
 fn get_media_files() -> Result<MediaCatalog, String> {
     let media_dir = get_media_directory();
@@ -68,6 +49,8 @@ fn get_media_files() -> Result<MediaCatalog, String> {
     if !media_dir.exists() {
         fs::create_dir_all(&media_dir)
             .map_err(|e| format!("Failed to create media directory: {}", e))?;
+        ensure_default_playback_config(&media_dir)?;
+        ensure_media_subfolders(&media_dir)?;
         return Ok(MediaCatalog {
             visuals: Vec::new(),
             audios: Vec::new(),
@@ -292,11 +275,10 @@ fn ensure_default_playback_config(media_dir: &Path) -> Result<(), String> {
         return Ok(());
     }
 
-    let template = PlaybackConfig::default_template();
-    let content = serde_json::to_string_pretty(&template)
-        .map_err(|e| format!("Failed to serialize {}: {}", PLAYBACK_CONFIG_FILE, e))?;
+    serde_json::from_str::<PlaybackConfig>(DEFAULT_PLAYBACK_CONFIG)
+        .map_err(|e| format!("Invalid bundled {}: {}", PLAYBACK_CONFIG_FILE, e))?;
 
-    fs::write(&config_path, content)
+    fs::write(&config_path, DEFAULT_PLAYBACK_CONFIG)
         .map_err(|e| format!("Failed to create {}: {}", PLAYBACK_CONFIG_FILE, e))?;
 
     Ok(())
@@ -313,11 +295,58 @@ fn get_media_directory() -> PathBuf {
 }
 
 fn ensure_media_subfolders(media_dir: &Path) -> Result<(), String> {
-    for subfolder in ["videos", "audio", "videos/night", "audio/night"] {
+    let mut subfolders = Vec::new();
+
+    if let Some(config) = load_playback_config(media_dir) {
+        for rule in &config.schedules {
+            if let Some(visual_dirs) = &rule.visual_dirs {
+                for dir in visual_dirs {
+                    let normalized = normalize_dir_prefix(dir);
+                    if !normalized.is_empty() && !normalized.contains("..") {
+                        subfolders.push(normalized);
+                    }
+                }
+            }
+
+            if let Some(audio_dirs) = &rule.audio_dirs {
+                for dir in audio_dirs {
+                    let normalized = normalize_dir_prefix(dir);
+                    if !normalized.is_empty() && !normalized.contains("..") {
+                        subfolders.push(normalized);
+                    }
+                }
+            }
+        }
+
+        if let Some(fallback) = &config.fallback {
+            if let Some(visual_dirs) = &fallback.visual_dirs {
+                for dir in visual_dirs {
+                    let normalized = normalize_dir_prefix(dir);
+                    if !normalized.is_empty() && !normalized.contains("..") {
+                        subfolders.push(normalized);
+                    }
+                }
+            }
+
+            if let Some(audio_dirs) = &fallback.audio_dirs {
+                for dir in audio_dirs {
+                    let normalized = normalize_dir_prefix(dir);
+                    if !normalized.is_empty() && !normalized.contains("..") {
+                        subfolders.push(normalized);
+                    }
+                }
+            }
+        }
+    }
+
+    subfolders.sort();
+    subfolders.dedup();
+
+    for subfolder in subfolders {
         let subfolder_path = media_dir.join(subfolder);
         if !subfolder_path.exists() {
             fs::create_dir_all(&subfolder_path)
-                .map_err(|e| format!("Failed to create {} directory: {}", subfolder, e))?;
+                .map_err(|e| format!("Failed to create media directory: {}", e))?;
         }
     }
     Ok(())
@@ -333,8 +362,8 @@ fn open_media_folder() -> Result<String, String> {
             .map_err(|e| format!("Failed to create media directory: {}", e))?;
     }
 
-    ensure_media_subfolders(&media_dir)?;
     ensure_default_playback_config(&media_dir)?;
+    ensure_media_subfolders(&media_dir)?;
     
     Ok(media_dir.to_string_lossy().to_string())
 }
@@ -356,21 +385,21 @@ pub fn run() {
                     return Ok(());
                 }
 
-                if let Err(e) = ensure_media_subfolders(&media_dir) {
+                if let Err(e) = ensure_default_playback_config(&media_dir) {
                     eprintln!("{}", e);
                 }
 
-                if let Err(e) = ensure_default_playback_config(&media_dir) {
+                if let Err(e) = ensure_media_subfolders(&media_dir) {
                     eprintln!("{}", e);
                 }
 
                 should_open = true;
             } else {
-                if let Err(e) = ensure_media_subfolders(&media_dir) {
+                if let Err(e) = ensure_default_playback_config(&media_dir) {
                     eprintln!("{}", e);
                 }
 
-                if let Err(e) = ensure_default_playback_config(&media_dir) {
+                if let Err(e) = ensure_media_subfolders(&media_dir) {
                     eprintln!("{}", e);
                 }
 

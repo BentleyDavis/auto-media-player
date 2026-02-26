@@ -1,0 +1,15 @@
+{
+	"schedules": [
+		{
+			"name": "night",
+			"start": "20:00",
+			"end": "07:00",
+			"visualDirs": ["visual"],
+			"audioDirs": ["audio-night"]
+		}
+	],
+	"fallback": {
+		"visualDirs": ["visual"],
+		"audioDirs": ["audio"]
+	}
+}

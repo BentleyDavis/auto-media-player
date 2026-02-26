@@ -41,8 +41,8 @@ If in-place update fails:
 ## Media Layout
 
 - Media root folder: `Documents/auto-media-player`
-- Visual files (videos and images): place them in `Documents/auto-media-player/videos` (or any nested subfolder)
-- Audio files (MP3): place them in `Documents/auto-media-player/audio` (or any nested subfolder)
+- Visual files (videos and images): place them in any folder under `Documents/auto-media-player` referenced by `visualDirs`
+- Audio files (MP3): place them in any folder under `Documents/auto-media-player` referenced by `audioDirs`
 - File discovery is recursive for both visuals and audio.
 - Visual playback and MP3 playback are randomized independently and are not synchronized.
 - If only one type exists (only visuals or only audio), the app still runs that type.
@@ -50,12 +50,10 @@ If in-place update fails:
 ## Time-Based Playback (No UI)
 
 - Config file path: `Documents/auto-media-player/playback-config.json`
+- Bundled default source: `src-tauri/defaults/playback-config.json`
+- If `Documents/auto-media-player/playback-config.json` does not exist, the app copies the bundled default file into the media folder.
 - The app reads this file every time it checks for the next media file, so edits are picked up automatically.
-- Default folders are created for you:
-	- `videos`
-	- `audio`
-	- `videos/night`
-	- `audio/night`
+- Only folders listed in `visualDirs` and `audioDirs` are auto-created.
 
 Default config template:
 
@@ -66,12 +64,12 @@ Default config template:
 			"name": "night",
 			"start": "20:00",
 			"end": "07:00",
-			"visualDirs": ["video"],
+			"visualDirs": ["visual"],
 			"audioDirs": ["audio-night"]
 		}
 	],
 	"fallback": {
-		"visualDirs": ["video"],
+		"visualDirs": ["visual"],
 		"audioDirs": ["audio"]
 	}
 }
