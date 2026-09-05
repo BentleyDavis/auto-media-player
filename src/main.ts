@@ -8,6 +8,17 @@ type MediaKind = 'visual' | 'audio';
 interface MediaCatalog {
   visuals: string[];
   audios: string[];
+  currentSchedule: ScheduleRule | null;
+}
+
+interface ScheduleRule {
+  name?: string;
+  start?: string;
+  end?: string;
+  brightness?: number;
+  volume?: number;
+  visualDirs?: string[];
+  audioDirs?: string[];
 }
 
 class RandomRecentSelector {
@@ -40,12 +51,38 @@ const selectors: Record<MediaKind, RandomRecentSelector> = {
   audio: new RandomRecentSelector(),
 };
 
+let currentAudioVolume = 1;
+
+function normalizePercent(value: number | undefined, fallback: number): number {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? Math.min(100, Math.max(0, value))
+    : fallback;
+}
+
+function applyBrightness(brightness: number | undefined): void {
+  const overlay = document.getElementById('brightness-overlay');
+  if (!overlay) {
+    return;
+  }
+
+  const normalizedBrightness = normalizePercent(brightness, 100);
+  overlay.style.opacity = String(1 - normalizedBrightness / 100);
+}
+
+function applyPlaybackSettings(schedule: ScheduleRule | null): void {
+  applyBrightness(schedule?.brightness);
+  currentAudioVolume = normalizePercent(schedule?.volume, 100) / 100;
+}
+
 async function getMediaFiles(): Promise<MediaCatalog> {
   try {
-    return await invoke<MediaCatalog>('get_media_files');
+    const mediaCatalog = await invoke<MediaCatalog>('get_media_files');
+    applyPlaybackSettings(mediaCatalog.currentSchedule);
+    return mediaCatalog;
   } catch (error) {
     console.error('Failed to get media files:', error);
-    return { visuals: [], audios: [] };
+    applyPlaybackSettings(null);
+    return { visuals: [], audios: [], currentSchedule: null };
   }
 }
 
@@ -82,6 +119,7 @@ const audioLoop = new MediaLoop<AudioElement>(
   createAudioAdapter({
     retryDelayMs: RETRY_DELAY_MS,
     fetchNextMedia: () => fetchNextMedia('audio'),
+    getVolume: () => currentAudioVolume,
   }),
 );
 

@@ -13,31 +13,28 @@ const PLAYBACK_CONFIG_FILE: &str = "playback-config.json";
 const DEFAULT_PLAYBACK_CONFIG: &str = include_str!("../defaults/playback-config.json");
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct MediaCatalog {
     visuals: Vec<String>,
     audios: Vec<String>,
+    current_schedule: Option<ScheduleRule>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 struct PlaybackConfig {
     schedules: Vec<ScheduleRule>,
-    fallback: Option<MediaFilter>,
+    fallback: Option<ScheduleRule>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 struct ScheduleRule {
     name: Option<String>,
-    start: String,
-    end: String,
-    visual_dirs: Option<Vec<String>>,
-    audio_dirs: Option<Vec<String>>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
-struct MediaFilter {
+    start: Option<String>,
+    end: Option<String>,
+    brightness: Option<f64>,
+    volume: Option<f64>,
     visual_dirs: Option<Vec<String>>,
     audio_dirs: Option<Vec<String>>,
 }
@@ -54,6 +51,7 @@ fn get_media_files() -> Result<MediaCatalog, String> {
         return Ok(MediaCatalog {
             visuals: Vec::new(),
             audios: Vec::new(),
+            current_schedule: None,
         });
     }
 
@@ -154,7 +152,7 @@ fn collect_media_recursive(media_dir: &Path) -> Result<MediaCatalog, String> {
     visuals.sort();
     audios.sort();
 
-    Ok(MediaCatalog { visuals, audios })
+    Ok(MediaCatalog { visuals, audios, current_schedule: None })
 }
 
 fn normalize_dir_prefix(dir: &str) -> String {
@@ -220,7 +218,10 @@ fn time_in_window(now_minutes: u16, start_minutes: u16, end_minutes: u16) -> boo
 
 fn get_active_schedule<'a>(config: &'a PlaybackConfig, now_minutes: u16) -> Option<&'a ScheduleRule> {
     config.schedules.iter().find(|rule| {
-        match (parse_time_to_minutes(&rule.start), parse_time_to_minutes(&rule.end)) {
+        match (
+            rule.start.as_deref().and_then(parse_time_to_minutes),
+            rule.end.as_deref().and_then(parse_time_to_minutes),
+        ) {
             (Some(start), Some(end)) => time_in_window(now_minutes, start, end),
             _ => false,
         }
@@ -254,17 +255,20 @@ fn apply_time_based_filter(media_dir: &Path, catalog: MediaCatalog) -> MediaCata
 
     let active_schedule = get_active_schedule(&config, now_minutes);
 
-    let visual_dirs = active_schedule
+    let current_schedule = active_schedule.or(config.fallback.as_ref());
+
+    let visual_dirs = current_schedule
         .and_then(|s| s.visual_dirs.clone())
         .or_else(|| config.fallback.as_ref().and_then(|f| f.visual_dirs.clone()));
 
-    let audio_dirs = active_schedule
+    let audio_dirs = current_schedule
         .and_then(|s| s.audio_dirs.clone())
         .or_else(|| config.fallback.as_ref().and_then(|f| f.audio_dirs.clone()));
 
     MediaCatalog {
         visuals: filter_paths_by_dirs(catalog.visuals, &visual_dirs),
         audios: filter_paths_by_dirs(catalog.audios, &audio_dirs),
+        current_schedule: current_schedule.cloned(),
     }
 }
 

@@ -4,6 +4,8 @@
 			"name": "night",
 			"start": "20:00",
 			"end": "07:00",
+			"brightness": 50,
+			"volume": 90,
 			"visualDirs": ["visual"],
 			"audioDirs": ["audio-night"]
 		}

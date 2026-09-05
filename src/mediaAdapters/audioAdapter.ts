@@ -30,8 +30,9 @@ function createAudioElement(url: string, scheduleNext: () => void, scheduleRetry
 export function createAudioAdapter(options: {
   retryDelayMs: number;
   fetchNextMedia: () => Promise<NextMedia | null>;
+  getVolume: () => number;
 }): MediaLoopAdapter<AudioElement> {
-  const { retryDelayMs, fetchNextMedia } = options;
+  const { retryDelayMs, fetchNextMedia, getVolume } = options;
 
   return {
     name: 'audio',
@@ -40,6 +41,7 @@ export function createAudioAdapter(options: {
     createElement: (media, controls) =>
       createAudioElement(media.url, () => controls.scheduleNext(), () => controls.scheduleRetry(retryDelayMs)),
     activateElement: async (element) => {
+      element.volume = getVolume();
       await element.play();
     },
     cleanupElement: (element) => {
