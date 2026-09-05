@@ -2,13 +2,23 @@
 
 This template should help get you started developing with Tauri in vanilla HTML, CSS and Typescript.
 
+## Changing the App Version & Executable Name
+
+The version and naming of the generated executable / NSIS installer are controlled by [src-tauri/tauri.conf.json](src-tauri/tauri.conf.json):
+
+- **App Version**: Update `"version"` in [src-tauri/tauri.conf.json](src-tauri/tauri.conf.json) (e.g. `"version": "0.4.0"`). *(Recommended: also update `"version"` in [package.json](package.json) and [src-tauri/Cargo.toml](src-tauri/Cargo.toml) to keep them in sync).*
+- **Executable / Product Name**: Set `"productName"` in [src-tauri/tauri.conf.json](src-tauri/tauri.conf.json).
+
+When running `npm run tauri:build` (or `npm run tauri:bundle`), the installer is automatically generated and named based on these values:
+`src-tauri/target/release/bundle/nsis/<productName>_<version>_x64-setup.exe`
+
 ## Install / Update on Another Windows PC (Manual)
 
 This project builds a Windows installer (`.exe`) using Tauri + NSIS.
 
 ### Build installer on your dev PC
 
-1. (Recommended for updates) bump app version in `src-tauri/tauri.conf.json`.
+1. (Recommended for updates) Bump app version in [src-tauri/tauri.conf.json](src-tauri/tauri.conf.json) (see [Changing the App Version & Executable Name](#changing-the-app-version--executable-name) above).
 2. Build the installer:
 
 ```bash

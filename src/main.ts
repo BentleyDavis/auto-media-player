@@ -126,6 +126,7 @@ const audioLoop = new MediaLoop<AudioElement>(
 window.addEventListener('DOMContentLoaded', async () => {
   try {
     const mediaCatalog = await getMediaFiles();
+    await invoke('close_splashscreen').catch(() => {});
 
     if (mediaCatalog.visuals.length > 0) {
       await visualLoop.start();
@@ -139,6 +140,7 @@ window.addEventListener('DOMContentLoaded', async () => {
       console.warn('No audio media files found');
     }
   } catch (error) {
+    await invoke('close_splashscreen').catch(() => {});
     console.error('Failed to start media loops:', error);
     visualLoop.scheduleTransition(RETRY_DELAY_MS);
     audioLoop.scheduleTransition(RETRY_DELAY_MS);

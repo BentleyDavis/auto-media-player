@@ -4,7 +4,10 @@ use std::path::PathBuf;
 use chrono::{Local, Timelike};
 use serde::Deserialize;
 use serde::Serialize;
+use tauri::Manager;
 use tauri_plugin_opener::OpenerExt;
+
+mod splash;
 
 const VISUAL_EXTENSIONS: [&str; 9] = [".mp4", ".webm", ".mkv", ".mov", ".jpg", ".jpeg", ".png", ".gif", ".webp"];
 const AUDIO_EXTENSIONS: [&str; 1] = [".mp3"];
@@ -372,11 +375,26 @@ fn open_media_folder() -> Result<String, String> {
     Ok(media_dir.to_string_lossy().to_string())
 }
 
+#[tauri::command]
+fn close_splashscreen(app_handle: tauri::AppHandle) {
+    splash::close();
+    if let Some(window) = app_handle.get_webview_window("main") {
+        let _ = window.show();
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    splash::show();
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![get_media_files, get_media_path, open_media_folder])
+        .invoke_handler(tauri::generate_handler![
+            get_media_files,
+            get_media_path,
+            open_media_folder,
+            close_splashscreen
+        ])
         .setup(|app| {
             // Check if media directory exists on startup
             let media_dir = get_media_directory();
